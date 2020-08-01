@@ -12,20 +12,24 @@ import (
 	"strings"
 
 	secretmanager "cloud.google.com/go/secretmanager/apiv1"
+	flag "github.com/spf13/pflag"
 	secretmanagerpb "google.golang.org/genproto/googleapis/cloud/secretmanager/v1"
 )
 
 func main() {
-	parseSecrets()
+	var secretsFile *string = flag.StringP("secretsFile", "f", "secrets.yaml", "Filepath to a yaml file with secrets")
+	flag.Parse()
+
+	parseSecrets(*secretsFile)
 }
 
 type secrets struct {
 	Secrets map[string]string `yaml:"secrets,omitempty"`
 }
 
-func parseSecrets() {
+func parseSecrets(secretsFile string) {
 	var raw secrets
-	raw_values := raw.loadSecretYaml()
+	raw_values := raw.loadSecretYaml(secretsFile)
 	if raw_values == nil {
 		return
 	}
@@ -51,15 +55,16 @@ func parseSecrets() {
 		log.Fatal(err)
 	}
 
-	err = ioutil.WriteFile("secrets.yaml.dec", data, 0644)
+	plaintextFile := secretsFile + ".dec"
+	log.Printf("Writing plaintext secrets to %s.", plaintextFile)
+	err = ioutil.WriteFile(plaintextFile, data, 0644)
 	if err != nil {
 		log.Fatal(err)
 	}
 	f.Close()
 }
 
-func (s *secrets) loadSecretYaml() *secrets {
-	secretsFile := "secrets.yaml"
+func (s *secrets) loadSecretYaml(secretsFile string) *secrets {
 	if fileExists(secretsFile) {
 		yamlFile, err := ioutil.ReadFile(secretsFile)
 		if err != nil {
