@@ -1,30 +1,58 @@
-// Sample quickstart is a basic program that uses Secret Manager.
 package main
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
+	"os"
 	"regexp"
+	"strings"
 
 	secretmanager "cloud.google.com/go/secretmanager/apiv1"
 	secretmanagerpb "google.golang.org/genproto/googleapis/cloud/secretmanager/v1"
 )
 
 func main() {
-	//valid, err := checkValidSecret("gsm:project-id/secret_name/0")
-	//if !valid {
-	//	log.Printf("%s", err)
-	//}
-	var s secrets
-	values := s.loadSecretYaml()
-
-	log.Printf("%s", values.Secrets["a"])
+	parseSecrets()
 }
 
 type secrets struct {
 	Secrets map[string]string `yaml:"secrets,omitempty"`
+}
+
+func parseSecrets() {
+	var raw secrets
+	raw_values := raw.loadSecretYaml()
+
+	var plaintext secrets
+	plaintext.Secrets = make(map[string]string)
+
+	for k, v := range raw_values.Secrets {
+		if valid, _ := checkValidSecret(v); valid {
+			plaintext.Secrets[k] = base64.StdEncoding.EncodeToString(getSecret(transformStringToCanonicalName(v)))
+		} else {
+			plaintext.Secrets[k] = v
+		}
+	}
+
+	data, err := yaml.Marshal(plaintext)
+	if err != nil {
+		log.Fatalf("error: %v", err)
+	}
+
+	f, err := os.Create("secrets.yaml.dec")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = ioutil.WriteFile("secrets.yaml.dec", data, 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
+	f.Close()
 }
 
 func (s *secrets) loadSecretYaml() *secrets {
@@ -39,7 +67,12 @@ func (s *secrets) loadSecretYaml() *secrets {
 	return s
 }
 
-func getSecret(s string) {
+func transformStringToCanonicalName(raw string) string {
+	s := strings.Split(raw[4:], "/")
+	return fmt.Sprintf("projects/%s/secrets/%s/versions/%s", s[0], s[1], s[2])
+}
+
+func getSecret(s string) []byte {
 	// Create the client.
 	ctx := context.Background()
 	client, err := secretmanager.NewClient(ctx)
@@ -49,7 +82,8 @@ func getSecret(s string) {
 
 	// Build the request.
 	accessRequest := &secretmanagerpb.AccessSecretVersionRequest{
-		Name: "projects/dronedeploy-code-delivery-0/secrets/tiles_prod_common_secrets_json/versions/1",
+		//Name: "projects/dronedeploy-code-delivery-0/secrets/tiles_prod_common_secrets_json/versions/1",
+		Name: s,
 	}
 
 	// Call the API.
@@ -58,11 +92,7 @@ func getSecret(s string) {
 		log.Fatalf("failed to access secret version: %v", err)
 	}
 
-	// Print the secret payload.
-	//
-	// WARNING: Do not print the secret in a production environment - this
-	// snippet is showing how to access the secret material.
-	log.Printf("Plaintext: %s", result.Payload.Data)
+	return result.Payload.Data
 }
 
 func checkValidSecret(s string) (bool, string) {
