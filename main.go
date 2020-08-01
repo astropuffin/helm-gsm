@@ -26,6 +26,9 @@ type secrets struct {
 func parseSecrets() {
 	var raw secrets
 	raw_values := raw.loadSecretYaml()
+	if raw_values == nil {
+		return
+	}
 
 	var plaintext secrets
 	plaintext.Secrets = make(map[string]string)
@@ -56,15 +59,21 @@ func parseSecrets() {
 }
 
 func (s *secrets) loadSecretYaml() *secrets {
-	yamlFile, err := ioutil.ReadFile("secrets.yaml")
-	if err != nil {
-		log.Printf("error loading secrets.yaml #%v", err)
+	secretsFile := "secrets.yaml"
+	if fileExists(secretsFile) {
+		yamlFile, err := ioutil.ReadFile(secretsFile)
+		if err != nil {
+			log.Printf("error loading secrets.yaml #%v", err)
+		}
+		err = yaml.Unmarshal(yamlFile, s)
+		if err != nil {
+			log.Fatalf("Unmarshal: %v", err)
+		}
+		return s
+	} else {
+		log.Printf("%s does not exist. Skipping decryption", secretsFile)
+		return nil
 	}
-	err = yaml.Unmarshal(yamlFile, s)
-	if err != nil {
-		log.Fatalf("Unmarshal: %v", err)
-	}
-	return s
 }
 
 func transformStringToCanonicalName(raw string) string {
@@ -116,4 +125,14 @@ func checkValidSecret(s string) (bool, string) {
 	}
 
 	return matched, msg
+}
+
+// fileExists checks if a file exists and is not a directory before we
+// try using it to prevent further errors.
+func fileExists(filename string) bool {
+	info, err := os.Stat(filename)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return !info.IsDir()
 }
